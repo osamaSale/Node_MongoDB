@@ -31,25 +31,19 @@ const getUserList = (req, res) => {
 };
 
 // Get ID User
-const getIdUser = (req, res) => {
-  const id = req.param.id;
-  if (id === null) {
-    res.json(error422("Enter your name"));
-  } else {
-    User.findById({id:id}).then((result) => {
-      if (result === null) {
-        let data = { status: 202, massage: "No Users Found" };
-        res.json(data);
-      } else {
-        let data = {
-          status: 200,
-          massage: "Users List Fetched Successfully",
-          result: result,
-        };
-        res.json(data);
-      }
+const getIdUser = async (req, res) => {
+  const id = req.params.id;
+  User.findById(id)
+    .then((result) => {
+      res.json({
+        massage: "successfully Create user",
+        status: 200,
+        result: result,
+      });
+    })
+    .catch((err) => {
+      res.json({ status: 202, massage: "No Users Found" });
     });
-  }
 };
 
 // create user
@@ -78,7 +72,7 @@ const createUser = async (req, res) => {
   } else {
     if (fileImage) {
       fileImage = await cloudinary.uploader.upload(req.file.path);
-      cloudinary_id = fileImage?.original_filename;
+      cloudinary_id = fileImage?.public_id;
       image = fileImage?.secure_url;
       fileImage = fileImage?.original_filename + "." + fileImage?.format;
     }
@@ -106,15 +100,7 @@ const createUser = async (req, res) => {
       })
       .catch(async (err) => {
         if (err) {
-          const options = {
-            use_filename: true,
-            unique_filename: false,
-            overwrite: true,
-          };
-          let deleteImage = await cloudinary.uploader.destroy(
-            fileImage,
-            options
-          );
+          let deleteImage = await cloudinary.uploader.destroy(cloudinary_id);
           let deleteFile = await fs.unlink(`./images/${fileImage}`, (err) => {
             if (err) {
               return "error";
@@ -133,4 +119,154 @@ const createUser = async (req, res) => {
   }
 };
 
-module.exports = { getUserList, getIdUser, createUser };
+// edit User
+
+const editUser = async (req, res) => {
+  const id = req.params.id;
+  let fileImage = req.file;
+  let cloudinary_id,
+    image = null;
+  User.findById(id)
+    .then(async (result) => {
+      if (result) {
+        if (fileImage) {
+          await fs.unlink(`./images/${result.fileImage}`, (err) => {
+            if (err) {
+              return "error";
+            } else {
+              return "Ok";
+            }
+          });
+          await cloudinary.uploader.destroy(result.cloudinary_id);
+          fileImage = await cloudinary.uploader.upload(req.file.path);
+          cloudinary_id = fileImage?.public_id;
+          image = fileImage?.secure_url;
+          fileImage = fileImage?.original_filename + "." + fileImage?.format;
+        } else {
+          cloudinary_id = result?.cloudinary_id;
+          image = result?.image;
+          fileImage = result?.fileImage;
+        }
+   
+        let user = {
+          name: req.body.name || result.name,
+          email: req.body.email || result.email,
+          password: req.body.password || result.password,
+          phone: req.body.phone || result.phone,
+          image: image || result.image,
+          fileImage: fileImage || result.fileImage,
+          cloudinary_id: cloudinary_id || result.cloudinary_id,
+          authorization: req.body.authorization || result.authorization,
+        };
+        user.password = bcrypt.hashSync(user.password, Number("salt"));
+        User.findByIdAndUpdate(id, { $set: user })
+          .then((result) => {
+            res.json({
+              massage: "successfully Edit",
+              status: 200,
+              result: result,
+            });
+          })
+          .catch((err) => {
+            res.json({ err: " You have entered invalid  Email" ,status: 201});
+          });
+      } 
+    })
+
+    .catch(async (err) => {
+      res.json({ status: 202, massage: "No Users Found" });
+    });
+};
+
+// Delete User
+
+const deleteUser = (req, res) => {
+  const id = req.params.id;
+  User.findById(id)
+    .then(async (result) => {
+      if (result) {
+        let deleteImage = await cloudinary.uploader.destroy(
+          result.cloudinary_id
+        );
+        let deleteFile = await fs.unlink(
+          `./images/${result.fileImage}`,
+          (err) => {
+            if (err) {
+              return "error";
+            } else {
+              return "Ok";
+            }
+          }
+        );
+        User.findByIdAndRemove(id).then((result) => {
+          res.json({
+            massage: "successfully Delete",
+            status: 200,
+            deleteImage: deleteImage,
+            deleteFile: deleteFile,
+          });
+        });
+      }
+    })
+    .catch(async () => {
+      res.json({ status: 202, massage: "No Users Found" });
+    });
+};
+
+// search  name
+
+const search = async (req, res) => {
+  const name = req.params.name;
+  await User.find({ name })
+    .then((result) => {
+      res.json({
+        massage: "successfully Edit",
+        status: 200,
+        result: result,
+      });
+    })
+    .catch(async () => {
+      res.json({ status: 202, massage: "No Users Found" });
+    });
+};
+
+// Login
+
+const login = async (req, res) => {
+  try {
+    let email = req.body.email;
+    let password = req.body.password;
+    let user = await User.findOne({ email });
+    if (user) {
+      if (await bcrypt.compare(password, user.password)) {
+        let id = user.id;
+        const token = jwt.sign({ id }, "jwtSecret", {
+          expiresIn: process.env.TOKEN_EXPIRATION,
+        });
+        res.json({
+          status: 200,
+          massage: "successfully Login",
+          result: user,
+          token: token,
+        });
+      } else {
+        res.json({ massage: "You have entered invalid Password", status: 201 });
+      }
+    } else {
+      res.json({ massage: "You have entered invalid Email", status: 203 });
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Internal Server error Occured");
+  }
+};
+
+module.exports = {
+  getUserList,
+  getIdUser,
+  createUser,
+  editUser,
+  deleteUser,
+  search,
+  login,
+};
