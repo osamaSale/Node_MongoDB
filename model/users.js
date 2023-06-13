@@ -7,7 +7,6 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   phone: { type: Number, required: true },
   image: { type: String, require: true },
-  fileImage: { type: String, require: true },
   cloudinary_id: { type: String, require: true },
   authorization: { type: String, require: true },
 });

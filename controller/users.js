@@ -1,7 +1,6 @@
 const User = require("../model/users");
 const cloudinary = require("../connection/cloudinary");
 const bcrypt = require("bcryptjs");
-const fs = require("fs");
 const jwt = require("jsonwebtoken");
 
 // Error
@@ -54,9 +53,8 @@ const createUser = async (req, res) => {
   let password = req.body.password;
   let phone = req.body.phone;
   let authorization = req.body.authorization;
-  let fileImage = req.file;
-  let cloudinary_id,
-    image = null;
+  let image = req.file;
+  let cloudinary_id;
   if (name === "") {
     res.json(error422("Enter your name"));
   } else if (email === "") {
@@ -67,14 +65,13 @@ const createUser = async (req, res) => {
     res.json(error422("Enter your Phone"));
   } else if (authorization === "") {
     res.json(error422("Enter your Authorization"));
-  } else if (!fileImage) {
+  } else if (!image) {
     res.json(error422("Enter your Image"));
   } else {
-    if (fileImage) {
-      fileImage = await cloudinary.uploader.upload(req.file.path);
-      cloudinary_id = fileImage?.public_id;
-      image = fileImage?.secure_url;
-      fileImage = fileImage?.original_filename + "." + fileImage?.format;
+    if (image) {
+      image = await cloudinary.uploader.upload(req.file.path, { folder: "Mogodb/users" });
+      cloudinary_id = image?.public_id;
+      image = image?.secure_url;
     }
     password = bcrypt.hashSync(password, Number("salt"));
     let user = new User({
@@ -83,7 +80,6 @@ const createUser = async (req, res) => {
       password: password,
       phone: phone,
       image: image,
-      fileImage: fileImage,
       cloudinary_id: cloudinary_id,
       authorization: authorization,
     });
@@ -100,19 +96,15 @@ const createUser = async (req, res) => {
       })
       .catch(async (err) => {
         if (err) {
-          let deleteImage = await cloudinary.uploader.destroy(cloudinary_id);
-          let deleteFile = await fs.unlink(`./images/${fileImage}`, (err) => {
-            if (err) {
-              return "error";
-            } else {
-              return "Ok";
-            }
+          let imageUrl;
+          let public_id = data.cloudinary_id.replace('Mogodb/users/g', '')
+          await cloudinary.uploader.destroy(public_id).then((res) => {
+            imageUrl = res
           });
           res.json({
             status: 201,
-            massage: `You have entered invalid email ${user.email}`,
-            deleteImage: deleteImage,
-            deleteFile: deleteFile,
+            massage: `You have entered invalid email ${data.email}`,
+            imageUrl: imageUrl
           });
         }
       });
@@ -123,38 +115,34 @@ const createUser = async (req, res) => {
 
 const editUser = async (req, res) => {
   const id = req.params.id;
-  let fileImage = req.file;
-  let cloudinary_id,
-    image = null;
+  let image = req.file;
+  let cloudinary_id;
   User.findById(id)
     .then(async (result) => {
+      console.log(result)
       if (result) {
-        if (fileImage) {
-          await fs.unlink(`./images/${result.fileImage}`, (err) => {
-            if (err) {
-              return "error";
-            } else {
-              return "Ok";
-            }
-          });
-          await cloudinary.uploader.destroy(result.cloudinary_id);
-          fileImage = await cloudinary.uploader.upload(req.file.path);
-          cloudinary_id = fileImage?.public_id;
-          image = fileImage?.secure_url;
-          fileImage = fileImage?.original_filename + "." + fileImage?.format;
+        if (image) {
+          let imageUrl;
+          let public_id = result.cloudinary_id.replace('Mogodb/users/g', '')
+          await cloudinary.uploader.destroy(public_id).then((res) => {
+            imageUrl = res
+          })
+          image = await cloudinary.uploader.upload(req.file.path, { folder: "Mogodb/users" });
+          cloudinary_id = image?.public_id;
+          image = image?.secure_url;
         } else {
-          cloudinary_id = result?.cloudinary_id;
-          image = result?.image;
-          fileImage = result?.fileImage;
+          image = result.image;
+          cloudinary_id = result.cloudinary_id;
         }
-   
+
+
+
         let user = {
           name: req.body.name || result.name,
           email: req.body.email || result.email,
           password: req.body.password || result.password,
           phone: req.body.phone || result.phone,
           image: image || result.image,
-          fileImage: fileImage || result.fileImage,
           cloudinary_id: cloudinary_id || result.cloudinary_id,
           authorization: req.body.authorization || result.authorization,
         };
@@ -168,9 +156,9 @@ const editUser = async (req, res) => {
             });
           })
           .catch((err) => {
-            res.json({ err: " You have entered invalid  Email" ,status: 201});
+            res.json({ err: " You have entered invalid  Email", status: 201 });
           });
-      } 
+      }
     })
 
     .catch(async (err) => {
@@ -185,25 +173,16 @@ const deleteUser = (req, res) => {
   User.findById(id)
     .then(async (result) => {
       if (result) {
-        let deleteImage = await cloudinary.uploader.destroy(
-          result.cloudinary_id
-        );
-        let deleteFile = await fs.unlink(
-          `./images/${result.fileImage}`,
-          (err) => {
-            if (err) {
-              return "error";
-            } else {
-              return "Ok";
-            }
-          }
-        );
+        let imageUrl;
+        let public_id = result.cloudinary_id.replace('Mogodb/users/g', '')
+        await cloudinary.uploader.destroy(public_id).then((res) => {
+          imageUrl = res
+        });
+
         User.findByIdAndRemove(id).then((result) => {
           res.json({
             massage: "successfully Delete",
-            status: 200,
-            deleteImage: deleteImage,
-            deleteFile: deleteFile,
+            status: 200
           });
         });
       }
